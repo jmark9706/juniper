@@ -1,0 +1,66 @@
+﻿If you've ever done any web programming, or even used a web browser, you've almost certainly heard of HTTP cookies. Cookies are basically key-value pairs that a web server can set for a client's web browser. This lets server programs track what pages a user has visited or what actions the user has performed. Cookies are very useful for implementing things like log-in sessions or shopping carts. 
+A perfect example of real-life cookies is the parking garage. When you enter a parking garage, a machine gives you a ticket, which has the current time on printed it. You leave the ticket in your car while you go watch a movie. When you leave the garage, you put the ticket in another machine, and it charges you based on the time on the ticket and the current time. In this case, the ticket is like a cookie, since it stores a small amount of information that you keep until later. Your car is like your web browser because it keeps the ticket for you while you do other things. The machines that generate and accept tickets are like scripts on a web server. 
+A log-in session for a website works almost the same way. You start at a log-in page and type your username and password. The server validates your credentials and gives you a cookie. The cookie contains something that identifies your session, usually just a unique number the server generated for you. The server remembers this session identifier as long as it is valid, and maps it to your username in its database. Each time you load a new page on that site, your browser sends the cookie to the server, which uses it to customize the page for you. When you log out, the server invalidates the session in the database and tells your browser to delete the cookie. 
+A shopping cart is another good application of cookies. When you first visit a site, your browser has no cookie, so the server creates a new shopping cart in its database and sends you a cookie with a key that identifies your cart. Every time you add an item to the cart, your browser sends the cookie so the server knows which cart the item should be placed in. 
+In addition to holding a simple key-value pair, several other properties can be associated with a cookie. Cookies can have a specific domain (the server's domain by default), a specific path (the browser only sends the cookie when loading pages under that path), and an expiration date. If no expiration date is set, the browser will delete the cookie when it shuts down. There is also a "version" attribute which should be set to 1, indicating how the cookie should be interpreted. This is required by the specification, but browsers don't seem to care if you don't set it. 
+Let's get down to business. How do we read and write cookies using Python CGI scripts? When a CGI script is executed, the first few lines of its output are interpreted as HTTP headers, and the rest of the output is the actual content the browser displays. A very simple "Hello, world" script looks like this: 
+#!/usr/bin/env python
+
+print """Content-Type: text/plain
+
+Hello, world!"""
+The "Content-Type" line is actually an HTTP header. This is the only required header, but you can add more headers to control how the browser interprets your page. In particular, you can use a "Set-Cookie" header like this: 
+Content-Type: text/html
+Set-Cookie: session=12345
+You can replace session and 12345 with any key and value you like. You can set other cookie attributes like this: 
+Set-Cookie: session=12345; expires=Sat, 7-Feb-2010 03:10:00; path=/; domain=.jayconrod.com; version=1
+The browser will store the cookie until it expires. Every time it loads a new page with the appropriate domain and path, it will submit cookies using a Cookie HTTP header like this: 
+Cookie: session=12345
+CGI scripts cannot access client HTTP headers directly, but you can access all cookies sent from the client using the HTTP_COOKIE environment variable. This environment variables is formatted as a series of key=value pairs delimited by semicolons. This script will print the value of the variable: 
+#!/usr/bin/env python
+
+import os
+
+print "Content-type: text/plain\n"
+
+if "HTTP_COOKIE" in os.environ:
+    print os.environ["HTTP_COOKIE"]
+else:
+    print "HTTP_COOKIE not set!"
+Reading and writing cookies manually can be tedious, since you have to deal with formatting and parsing text. You can't assume that the client will send you valid cookies, so you also have to be prepared for errors. Python's Cookie module will do the hard work for you. It provides the SimpleCookie class, which you can initialize using the actual HTTP_COOKIE string sent to your script. You can also initialize it with your own attributes and generate an appropriate HTTP header using the output() method. Here's an example for setting a cookie: 
+#!/usr/bin/env python
+
+import Cookie
+import datetime
+import random
+
+expiration = datetime.datetime.now() + datetime.timedelta(days=30)
+cookie = Cookie.SimpleCookie()
+cookie["session"] = random.randint(1000000000)
+cookie["session"]["domain"] = ".jayconrod.com"
+cookie["session"]["path"] = "/"
+cookie["session"]["expires"] = \
+  expiration.strftime("%a, %d-%b-%Y %H:%M:%S PST")
+
+print "Content-type: text/plain"
+print cookie.output()
+print
+print "Cookie set with: " + cookie.output()
+You can set more than cookie at a time using this module (it refers to each one as a "morsel"). 
+This next example shows how to read the same cookie: 
+#!/usr/bin/env python
+
+import Cookie
+import os
+
+print "Content-type: text/plain\n"
+
+try:
+    cookie = Cookie.SimpleCookie(os.environ["HTTP_COOKIE"])
+    print "session = " + cookie["session"].value
+except (Cookie.CookieError, KeyError):
+    print "session cookie not set!"
+Always keep security in mind when programming with cookies. Since cookies are submitted by the client they can easily be forged, so don't write scripts where security depends on cookies being accurate. For instance, if you're writing a log-in script, don't store just the username (or password!) in the cookie, since an attacker could substitute anyone's username in the cookie and gain access to that person's information. 
+Usually the best thing to do is to store a large, random number as a session ID. This ID can be used as a key in a database to associate any relevant information with that session. If the numbers come from a large range, an attacker would have a difficult time guessing a valid ID. However, make sure that the random number generator you use isn't seeded with the current time. If the attacker knows the random generator algorithm, she can seed her own random number generator with the current time to produce session IDs that might be valid for someone else. The Python random number generator is seeded by default using os.urandom(), which is fine on Linux, Windows, OS X, and other platforms that support it. 
+Finally, be aware that if cookies are sent in plaintext, they can be stolen and copied by an eavesdropper. If you have a website where the log-in form is encrypted but other pages are not, an attacker can hijack a user's session when the user loads a non-secure page. The only way to protect against this is to encrypt every page for which the browser will send a cookie, which may have a hefty performance penalty. If you do end up doing this, add the secure flag to cookies you set. This instructs the browser not to send the cookie when requesting unencrypted content, which might happen if an encrypted page has unencrypted parts, such as images. 
+
